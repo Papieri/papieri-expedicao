@@ -44,7 +44,7 @@ def extrair_observacoes(texto: str) -> str:
             obs_linhas.append(ln)
 
     return " | ".join(obs_linhas)
-    
+  
 # --------- cabeçalho ---------
 def extrair_header(texto: str):
     pedido = re.search(r"Pedido de Venda N[º°]\s*(\d+)", texto, re.I)
@@ -91,12 +91,22 @@ def extrair_itens(texto: str):
 def extrair_do_pdf(pdf_bytes: bytes) -> pd.DataFrame:
     dados = []
     with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
+
+        # 1) texto completo do PDF (todas as páginas)
+        textos = []
         for page in pdf.pages:
-            texto = page.extract_text() or ""
-            txt = mascarar(texto)
-            h = extrair_header(txt)
+            textos.append(page.extract_text() or "")
+        texto_full = mascarar("\n".join(textos))
+
+        # header/obs do documento inteiro
+        h_full = extrair_header(texto_full)
+
+        # 2) itens por página, mas sempre usando o header completo
+        for page in pdf.pages:
+            txt = mascarar(page.extract_text() or "")
             for it in extrair_itens(txt):
-                dados.append({**h, **it})
+                dados.append({**h_full, **it})
+
     return pd.DataFrame(dados)
 
 # --------- PDF de saída (fonte maior) ---------
