@@ -20,32 +20,25 @@ def mascarar(texto: str) -> str:
     return t
     
 def extrair_observacoes(texto: str) -> str:
-    # pega tudo a partir de "Outras Informações"
-    bloco = re.search(r"Outras\s+Informa[cç][oõ]es(.*)$", texto, re.S | re.I)
-    if not bloco:
+    # normaliza quebras de linha
+    texto = (texto or "").replace("\r\n", "\n").replace("\r", "\n")
+
+    # Captura tudo que vem depois de "Vendedor:" até "Gerado em" (ou "Página" / fim)
+    m = re.search(
+        r"Vendedor\s*:\s*.*?\n(.*?)(?:\nGerado em\b|\nPágina\b|\Z)",
+        texto,
+        re.S | re.I
+    )
+    if not m:
         return ""
 
-    linhas = bloco.group(1).splitlines()
-    capturar = False
-    obs_linhas = []
+    bloco = m.group(1)
 
-    for ln in linhas:
-        ln = ln.strip()
-        if not ln:
-            continue
+    # limpa e mantém só linhas com conteúdo
+    linhas = [ln.strip() for ln in bloco.splitlines() if ln.strip()]
 
-        if re.search(r"Vendedor\s*:", ln, re.I):
-            capturar = True
-            continue
-
-        if capturar:
-            # para em algo típico de rodapé se existir
-            if re.search(r"^Gerado em\b", ln, re.I):
-                break
-            obs_linhas.append(ln)
-
-    return " | ".join(obs_linhas)
-  
+    return " | ".join(linhas)
+    
 # --------- cabeçalho ---------
 def extrair_header(texto: str):
     pedido = re.search(r"Pedido de Venda N[º°]\s*(\d+)", texto, re.I)
@@ -93,16 +86,21 @@ def extrair_do_pdf(pdf_bytes: bytes) -> pd.DataFrame:
     dados = []
     with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
 
-        # 1) texto completo do PDF (todas as páginas)
-        textos = []
+        # 1) texto completo (todas as páginas), com fallback
+        partes = []
         for page in pdf.pages:
-            textos.append(page.extract_text() or "")
-        texto_full = mascarar("\n".join(textos))
+            t1 = page.extract_text() or ""
+            try:
+                t2 = page.extract_text_simple() or ""
+            except Exception:
+                t2 = ""
+            # junta as duas tentativas (sem duplicar demais)
+            partes.append(t1 + "\n" + t2)
 
-        # header/obs do documento inteiro
-        h_full = extrair_header(texto_full)
+        texto_full = mascarar("\n".join(partes))
+        h_full = extrair_header(texto_full)  # agora Obs vem do texto completo
 
-        # 2) itens por página, mas sempre usando o header completo
+        # 2) itens por página (como antes)
         for page in pdf.pages:
             txt = mascarar(page.extract_text() or "")
             for it in extrair_itens(txt):
