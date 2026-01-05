@@ -20,33 +20,27 @@ def mascarar(texto: str) -> str:
     return t
     
 def extrair_observacoes(texto: str) -> str:
-    """
-    Extrai as observações a partir do bloco 'Outras Informações',
-    pegando tudo que vem após a linha 'Vendedor:'.
-    """
-    bloco = re.search(
-        r"Outras Informa[cç][oõ]es(.*?)(Pedido Liberado|$)",
-        texto,
-        re.S | re.IGNORECASE
-    )
-
+    bloco = re.search(r"Outras Informa[cç][oõ]es(.*)$", texto, re.S | re.I)
     if not bloco:
         return ""
 
     linhas = bloco.group(1).splitlines()
-    obs_linhas = []
     capturar = False
+    obs_linhas = []
 
     for ln in linhas:
         ln = ln.strip()
         if not ln:
             continue
 
-        if re.search(r"Vendedor\s*:", ln, re.IGNORECASE):
+        if re.search(r"Vendedor\s*:", ln, re.I):
             capturar = True
             continue
 
         if capturar:
+            # para antes do rodapé "Gerado em ..."
+            if re.search(r"^Gerado em\b", ln, re.I):
+                break
             obs_linhas.append(ln)
 
     return " | ".join(obs_linhas)
