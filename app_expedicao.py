@@ -18,7 +18,39 @@ def mascarar(texto: str) -> str:
     t = re.sub(r"\(?\+?\d{2}\)?\s?\d{4,5}\-?\d{4}", "***-****", t)                       # Telefones
     t = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[email oculto]", t)   # E-mails
     return t
+    
+def extrair_observacoes(texto: str) -> str:
+    """
+    Extrai as observações a partir do bloco 'Outras Informações',
+    pegando tudo que vem após a linha 'Vendedor:'.
+    """
+    bloco = re.search(
+        r"Outras Informa[cç][oõ]es(.*?)(Pedido Liberado|$)",
+        texto,
+        re.S | re.IGNORECASE
+    )
 
+    if not bloco:
+        return ""
+
+    linhas = bloco.group(1).splitlines()
+    obs_linhas = []
+    capturar = False
+
+    for ln in linhas:
+        ln = ln.strip()
+        if not ln:
+            continue
+
+        if re.search(r"Vendedor\s*:", ln, re.IGNORECASE):
+            capturar = True
+            continue
+
+        if capturar:
+            obs_linhas.append(ln)
+
+    return " | ".join(obs_linhas)
+    
 # --------- cabeçalho ---------
 def extrair_header(texto: str):
     pedido = re.search(r"Pedido de Venda N[º°]\s*(\d+)", texto, re.I)
@@ -39,12 +71,9 @@ def extrair_header(texto: str):
     data_inclusao = f"{inc.group(1)} {inc.group(2)}" if inc else ""
     prev = re.search(r"Previs[aã]o de Faturamento:\s*([0-9/]{10})", texto, re.I)
     prev_fat = prev.group(1) if prev else ""
-    obs = ""
-    mobs = re.search(r"OBS[:\s]+(.+)", texto, re.I)
-    if mobs: obs = mobs.group(1).strip()
     return dict(Pedido=pedido_num, Cliente=cliente, Cidade=cidade, UF=uf,
                 Data_inclusao=data_inclusao, Previsao_faturamento=prev_fat,
-                Obs_expedicao=obs)
+                Obs_expedicao=extrair_observacoes(texto))
 
 # --------- itens (ajustado ao PDF enviado) ---------
 def extrair_itens(texto: str):
