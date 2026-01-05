@@ -20,7 +20,8 @@ def mascarar(texto: str) -> str:
     return t
     
 def extrair_observacoes(texto: str) -> str:
-    bloco = re.search(r"Outras Informa[cç][oõ]es(.*)$", texto, re.S | re.I)
+    # pega tudo a partir de "Outras Informações"
+    bloco = re.search(r"Outras\s+Informa[cç][oõ]es(.*)$", texto, re.S | re.I)
     if not bloco:
         return ""
 
@@ -38,7 +39,7 @@ def extrair_observacoes(texto: str) -> str:
             continue
 
         if capturar:
-            # para antes do rodapé "Gerado em ..."
+            # para em algo típico de rodapé se existir
             if re.search(r"^Gerado em\b", ln, re.I):
                 break
             obs_linhas.append(ln)
