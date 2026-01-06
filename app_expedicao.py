@@ -10,6 +10,7 @@ from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, 
 from reportlab.lib.pagesizes import A4
 from reportlab.lib import colors
 from reportlab.lib.styles import getSampleStyleSheet
+import requests
 
 # --------- máscaras de dados sensíveis ---------
 def mascarar(texto: str) -> str:
@@ -18,6 +19,46 @@ def mascarar(texto: str) -> str:
     t = re.sub(r"\(?\+?\d{2}\)?\s?\d{4,5}\-?\d{4}", "***-****", t)                       # Telefones
     t = re.sub(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}", "[email oculto]", t)   # E-mails
     return t
+    
+def limpar_cnpj(cnpj: str) -> str:
+    return re.sub(r"\D", "", cnpj or "")
+
+def consultar_nome_fantasia_brasilapi(cnpj: str) -> str:
+    cnpj = limpar_cnpj(cnpj)
+    if len(cnpj) != 14:
+        return ""
+
+    url = f"https://brasilapi.com.br/api/cnpj/v1/{cnpj}"
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code != 200:
+            return ""
+        j = r.json()
+        return (j.get("nome_fantasia") or "").strip()
+    except Exception:
+        return ""
+
+def consultar_nome_fantasia_cnpjws(cnpj: str) -> str:
+    cnpj = limpar_cnpj(cnpj)
+    if len(cnpj) != 14:
+        return ""
+
+    url = f"https://publica.cnpj.ws/cnpj/{cnpj}"
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code != 200:
+            return ""
+        j = r.json()
+        est = j.get("estabelecimento") or {}
+        return (est.get("nome_fantasia") or "").strip()
+    except Exception:
+        return ""
+
+def obter_nome_fantasia_api(cnpj: str) -> str:
+    nf = consultar_nome_fantasia_brasilapi(cnpj)
+    if nf:
+        return nf
+    return consultar_nome_fantasia_cnpjws(cnpj)
     
 def extrair_observacoes(texto: str) -> str:
     # normaliza quebras de linha
