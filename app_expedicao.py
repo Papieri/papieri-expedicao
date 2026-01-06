@@ -213,21 +213,27 @@ def guia_pdf(df: pd.DataFrame, tamanho_fonte=16, tamanho_desc=10) -> bytes:
     # Cabeçalho resumido com respiro
     
     story.append(Paragraph(f"Pedido {h.get('Pedido','')}", styles["Title"]))
-    story.append(Spacer(1, 8))
+story.append(Spacer(1, 8))
 
-    nome_fantasia = (h.get("Cliente_exibicao") or "").strip()
-    razao_social  = (h.get("Cliente") or "").strip()
+nome_fantasia = (h.get("Cliente_exibicao") or "").strip()
+razao_social  = (h.get("Cliente") or "").strip()
 
-    if nome_fantasia:
-    story.append(Paragraph(f"<b>Cliente:</b> {nome_fantasia}", styles["Normal"]))
+if nome_fantasia:
+    story.append(
+        Paragraph(f"<b>Cliente:</b> {nome_fantasia}", styles["Normal"])
+    )
     story.append(Spacer(1, 2))
-    
-    if razao_social and razao_social.lower() != nome_fantasia.lower():
-        story.append(Paragraph(f"<b>Razão Social:</b> {razao_social}", styles["Normal"]))
-    else:
-    story.append(Paragraph(f"<b>Cliente:</b> {razao_social}", styles["Normal"]))
 
-    story.append(Spacer(1, 6))
+    if razao_social and razao_social.lower() != nome_fantasia.lower():
+        story.append(
+            Paragraph(f"<b>Razão Social:</b> {razao_social}", styles["Normal"])
+        )
+else:
+    story.append(
+        Paragraph(f"<b>Cliente:</b> {razao_social}", styles["Normal"])
+    )
+
+story.append(Spacer(1, 6))
 
     # -------- TABELA --------
     header = ["Qtd", "Unid", "QTD", "CHECK", "Código", "Descrição"]
