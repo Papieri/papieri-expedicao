@@ -53,6 +53,10 @@ def consultar_nome_fantasia_cnpjws(cnpj: str) -> str:
         return (est.get("nome_fantasia") or "").strip()
     except Exception:
         return ""
+        
+@st.cache_data(ttl=60*60*24)  # 24h
+def obter_nome_fantasia_api_cache(cnpj: str) -> str:
+    return obter_nome_fantasia_api(cnpj)
 
 def obter_nome_fantasia_api(cnpj: str) -> str:
     nf = consultar_nome_fantasia_brasilapi(cnpj)
@@ -81,28 +85,53 @@ def extrair_observacoes(texto: str) -> str:
     return " | ".join(linhas)
     
 # --------- cabeçalho ---------
+
 def extrair_header(texto: str):
     pedido = re.search(r"Pedido de Venda N[º°]\s*(\d+)", texto, re.I)
     pedido_num = pedido.group(1) if pedido else ""
+
+    # Cliente (Razão Social)
     cliente = ""
     linhas = texto.splitlines()
     for i, ln in enumerate(linhas):
         if "Informações do Cliente" in ln:
-            for j in range(i+1, min(i+6, len(linhas))):
+            for j in range(i+1, min(i+8, len(linhas))):
                 if linhas[j].strip():
                     cliente = linhas[j].strip()
                     break
             break
+
+    # CNPJ
+    cnpj_match = re.search(r"\b\d{2}\.?\d{3}\.?\d{3}[\/\-]?\d{4}\-?\d{2}\b", texto)
+    cnpj = cnpj_match.group(0) if cnpj_match else ""
+
+    # Nome Fantasia via API (com cache)
+    nome_fantasia = obter_nome_fantasia_api_cache(cnpj) if cnpj else ""
+    cliente_exibicao = nome_fantasia if nome_fantasia else cliente
+
+    # Cidade/UF
     ciduf = re.search(r"([A-Za-zÀ-ú\s]+)\s*-\s*([A-Z]{2})\s*-\s*CEP", texto)
     cidade = ciduf.group(1).strip() if ciduf else ""
     uf = ciduf.group(2).strip() if ciduf else ""
+
+    # Datas
     inc = re.search(r"inclu[ií]do em:\s*([0-9/]{10})\s*às\s*([0-9:]{8})", texto, re.I)
     data_inclusao = f"{inc.group(1)} {inc.group(2)}" if inc else ""
+
     prev = re.search(r"Previs[aã]o de Faturamento:\s*([0-9/]{10})", texto, re.I)
     prev_fat = prev.group(1) if prev else ""
-    return dict(Pedido=pedido_num, Cliente=cliente, Cidade=cidade, UF=uf,
-                Data_inclusao=data_inclusao, Previsao_faturamento=prev_fat,
-                Obs_expedicao=extrair_observacoes(texto))
+
+    return dict(
+        Pedido=pedido_num,
+        Cliente=cliente,  # razão social
+        Cliente_exibicao=cliente_exibicao,  # nome fantasia (se existir)
+        CNPJ=cnpj,
+        Cidade=cidade,
+        UF=uf,
+        Data_inclusao=data_inclusao,
+        Previsao_faturamento=prev_fat,
+        Obs_expedicao=extrair_observacoes(texto),
+    )
 
 # --------- itens (ajustado ao PDF enviado) ---------
 def extrair_itens(texto: str):
@@ -123,6 +152,7 @@ def extrair_itens(texto: str):
     return itens
 
 # --------- pipeline ---------
+
 def extrair_do_pdf(pdf_bytes: bytes) -> pd.DataFrame:
     dados = []
     with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
@@ -135,13 +165,14 @@ def extrair_do_pdf(pdf_bytes: bytes) -> pd.DataFrame:
                 t2 = page.extract_text_simple() or ""
             except Exception:
                 t2 = ""
-            # junta as duas tentativas (sem duplicar demais)
             partes.append(t1 + "\n" + t2)
 
-        texto_full = mascarar("\n".join(partes))
-        h_full = extrair_header(texto_full)  # agora Obs vem do texto completo
+        texto_full_bruto = "\n".join(partes)
 
-        # 2) itens por página (como antes)
+        # header SEM mascarar (para pegar CNPJ e consultar API)
+        h_full = extrair_header(texto_full_bruto)
+
+        # 2) itens por página com texto mascarado (para não vazar dados)
         for page in pdf.pages:
             txt = mascarar(page.extract_text() or "")
             for it in extrair_itens(txt):
@@ -182,7 +213,7 @@ def guia_pdf(df: pd.DataFrame, tamanho_fonte=16, tamanho_desc=10) -> bytes:
     # Cabeçalho resumido com respiro
     story.append(Paragraph(f"Pedido {h.get('Pedido','')}", styles["Title"]))
     story.append(Spacer(1, 8))
-    story.append(Paragraph(f"<b>Cliente:</b> {h.get('Cliente','')}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Razão Social:</b> {h.get('Cliente','')}", styles["Normal"]))
     story.append(Spacer(1, 6))
     story.append(Paragraph(f"<b>Inclusão:</b> {h.get('Data_inclusao','')}", styles["Normal"]))
     story.append(Paragraph(f"<b>Previsão Faturamento:</b> {h.get('Previsao_faturamento','')}", styles["Normal"]))
