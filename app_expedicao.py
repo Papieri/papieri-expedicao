@@ -200,40 +200,41 @@ def guia_pdf(df: pd.DataFrame, tamanho_fonte=16, tamanho_desc=10) -> bytes:
     desc_style = ParagraphStyle(
         name="Desc", parent=styles["Normal"],
         fontName="Helvetica", fontSize=tamanho_desc,
-        leading=int(tamanho_desc * 1.25)  # quebra harmônica
+        leading=int(tamanho_desc * 1.25)
     )
 
     story = []
     if df.empty:
         story.append(Paragraph("Sem itens.", styles["Normal"]))
-        doc.build(story); return buf.getvalue()
+        doc.build(story)
+        return buf.getvalue()
 
     h = df.iloc[0].to_dict()
 
-    # Cabeçalho resumido com respiro
-    
+    # -------- CABEÇALHO --------
     story.append(Paragraph(f"Pedido {h.get('Pedido','')}", styles["Title"]))
-story.append(Spacer(1, 8))
+    story.append(Spacer(1, 8))
 
-nome_fantasia = (h.get("Cliente_exibicao") or "").strip()
-razao_social  = (h.get("Cliente") or "").strip()
+    nome_fantasia = (h.get("Cliente_exibicao") or "").strip()
+    razao_social = (h.get("Cliente") or "").strip()
 
-if nome_fantasia:
-    story.append(
-        Paragraph(f"<b>Cliente:</b> {nome_fantasia}", styles["Normal"])
-    )
-    story.append(Spacer(1, 2))
+    # Modo 1: Fantasia em cima / Razão embaixo
+    if nome_fantasia:
+        story.append(Paragraph(f"<b>Cliente:</b> {nome_fantasia}", styles["Normal"]))
+        story.append(Spacer(1, 2))
+        if razao_social and razao_social.lower() != nome_fantasia.lower():
+            story.append(Paragraph(f"<b>Razão Social:</b> {razao_social}", styles["Normal"]))
+    else:
+        story.append(Paragraph(f"<b>Cliente:</b> {razao_social}", styles["Normal"]))
 
-    if razao_social and razao_social.lower() != nome_fantasia.lower():
-        story.append(
-            Paragraph(f"<b>Razão Social:</b> {razao_social}", styles["Normal"])
-        )
-else:
-    story.append(
-        Paragraph(f"<b>Cliente:</b> {razao_social}", styles["Normal"])
-    )
+    story.append(Spacer(1, 6))
+    story.append(Paragraph(f"<b>Inclusão:</b> {h.get('Data_inclusao','')}", styles["Normal"]))
+    story.append(Paragraph(f"<b>Previsão Faturamento:</b> {h.get('Previsao_faturamento','')}", styles["Normal"]))
+    story.append(Spacer(1, 6))
 
-story.append(Spacer(1, 6))
+    obs = h.get("Obs_expedicao") or ""
+    story.append(Paragraph(f"<b>Obs.:</b> {obs}", styles["Normal"]))
+    story.append(Spacer(1, 12))
 
     # -------- TABELA --------
     header = ["Qtd", "Unid", "QTD", "CHECK", "Código", "Descrição"]
@@ -241,53 +242,49 @@ story.append(Spacer(1, 6))
 
     for _, r in df.iterrows():
         qtd_br = f"{r['Quantidade']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
-        desc_par = Paragraph(str(r.get("Descricao","")), desc_style)
+        desc_par = Paragraph(str(r.get("Descricao", "")), desc_style)
         linhas.append([
             qtd_br,                 # 0 Qtd
-            r.get("Unid",""),       # 1 Unid
+            r.get("Unid", ""),      # 1 Unid
             "",                     # 2 QTD (vazia p/ escrita manual)
             "",                     # 3 CHECK (vazia)
-            r.get("Codigo",""),     # 4 Código
+            r.get("Codigo", ""),    # 4 Código
             desc_par                # 5 Descrição (fonte fixa)
         ])
 
-    # larguras: ajuste se quiser
     col_widths = [55, 45, 40, 45, 95, 250]
     tb = Table(linhas, colWidths=col_widths, repeatRows=1)
 
     tb.setStyle(TableStyle([
-        # Cabeçalho
-        ("FONT", (0,0), (-1,0), "Helvetica-Bold", tamanho_fonte),
-        ("BACKGROUND", (0,0), (-1,0), colors.lightgrey),
-        ("ALIGN", (0,0), (-1,0), "CENTER"),
+        ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", tamanho_fonte),
+        ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
+        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
 
-        # Corpo
-        ("FONT", (0,1), (1,-1), "Helvetica", tamanho_fonte),  # Qtd/Unid seguem slider
-        ("FONT", (4,1), (4,-1), "Helvetica", tamanho_fonte),  # Código segue slider
-        # coluna 5 (Descrição) usa Paragraph com fonte fixa -> sem FONT aqui
+        ("FONT", (0, 1), (1, -1), "Helvetica", tamanho_fonte),
+        ("FONT", (4, 1), (4, -1), "Helvetica", tamanho_fonte),
 
-        ("GRID", (0,0), (-1,-1), 0.25, colors.black),
-        ("VALIGN", (0,0), (-1,-1), "MIDDLE"),
+        ("GRID", (0, 0), (-1, -1), 0.25, colors.black),
+        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 
-        # alinhamentos por coluna
-        ("ALIGN", (0,1), (0,-1), "RIGHT"),    # Qtd
-        ("ALIGN", (1,1), (1,-1), "RIGHT"),    # Unid
-        ("ALIGN", (2,1), (3,-1), "CENTER"),   # QTD (em branco) e CHECK (em branco)
-        ("ALIGN", (4,1), (4,-1), "LEFT"),     # Código
-        ("ALIGN", (5,1), (5,-1), "LEFT"),     # Descrição
+        ("ALIGN", (0, 1), (0, -1), "RIGHT"),
+        ("ALIGN", (1, 1), (1, -1), "RIGHT"),
+        ("ALIGN", (2, 1), (3, -1), "CENTER"),
+        ("ALIGN", (4, 1), (4, -1), "LEFT"),
+        ("ALIGN", (5, 1), (5, -1), "LEFT"),
 
-        # espaço maior para escrita manual nas colunas QTD/CHECK
-        ("TOPPADDING", (0,1), (-1,-1), 8),
-        ("BOTTOMPADDING", (0,1), (-1,-1), 8),
-        ("LEFTPADDING", (0,1), (-1,-1), 6),
-        ("RIGHTPADDING", (0,1), (-1,-1), 6),
+        ("TOPPADDING", (0, 1), (-1, -1), 8),
+        ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
+        ("LEFTPADDING", (0, 1), (-1, -1), 6),
+        ("RIGHTPADDING", (0, 1), (-1, -1), 6),
     ]))
 
     story.append(tb)
     story.append(Spacer(1, 12))
     story.append(Paragraph(f"Gerado em {datetime.now():%d/%m/%Y %H:%M:%S}", styles["Normal"]))
+
     doc.build(story)
     return buf.getvalue()
+
 # --------- APP ---------
 def main():
     st.set_page_config(page_title="Extrator p/ Expedição", layout="centered")
