@@ -101,9 +101,33 @@ def extrair_header(texto: str):
                     break
             break
 
-    # CNPJ
-    cnpj_match = re.search(r"\b\d{2}\.?\d{3}\.?\d{3}[\/\-]?\d{4}\-?\d{2}\b", texto)
-    cnpj = cnpj_match.group(0) if cnpj_match else ""
+    # --- CNPJ do CLIENTE: procurar dentro do bloco "Informações do Cliente" ---
+    cnpj = ""
+    m_cli = re.search(
+        r"Informações do Cliente(.*?)(Itens do Pedido de Venda|Outras Informa[cç][oõ]es|$)",
+        texto,
+        re.S | re.I
+    )
+
+    if m_cli:
+        bloco_cli = m_cli.group(1)
+
+    # 1) tenta pegar "CNPJ: xx.xxx.xxx/xxxx-xx" (mais confiável)
+    m_cnpj = re.search(
+        r"CNPJ\s*:\s*(\d{2}\.?\d{3}\.?\d{3}[\/\-]?\d{4}\-?\d{2})",
+        bloco_cli,
+        re.I
+    )
+    if m_cnpj:
+        cnpj = m_cnpj.group(1)
+    else:
+        # 2) fallback: primeiro CNPJ encontrado dentro do bloco do cliente
+        m_cnpj2 = re.search(
+            r"\b\d{2}\.?\d{3}\.?\d{3}[\/\-]?\d{4}\-?\d{2}\b",
+            bloco_cli
+        )
+        if m_cnpj2:
+            cnpj = m_cnpj2.group(0)
 
     # Nome Fantasia via API (com cache)
     nome_fantasia = obter_nome_fantasia_api_cache(cnpj) if cnpj else ""
