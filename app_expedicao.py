@@ -213,6 +213,7 @@ def guia_pdf(df: pd.DataFrame, tamanho_fonte=16, tamanho_desc=10) -> bytes:
     # Cabeçalho resumido com respiro
     story.append(Paragraph(f"Pedido {h.get('Pedido','')}", styles["Title"]))
     story.append(Spacer(1, 8))
+    tory.append(Paragraph(f"<b>Cliente:</b> {h.get('Cliente_exibicao','')}", styles["Normal"]))
     story.append(Paragraph(f"<b>Razão Social:</b> {h.get('Cliente','')}", styles["Normal"]))
     story.append(Spacer(1, 6))
     story.append(Paragraph(f"<b>Inclusão:</b> {h.get('Data_inclusao','')}", styles["Normal"]))
