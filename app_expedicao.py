@@ -208,20 +208,26 @@ def guia_pdf(df: pd.DataFrame, tamanho_fonte=16, tamanho_desc=10) -> bytes:
         story.append(Paragraph("Sem itens.", styles["Normal"]))
         doc.build(story); return buf.getvalue()
 
-    h = df.iloc[0]
+    h = df.iloc[0].to_dict()
 
     # Cabeçalho resumido com respiro
+    
     story.append(Paragraph(f"Pedido {h.get('Pedido','')}", styles["Title"]))
     story.append(Spacer(1, 8))
-    tory.append(Paragraph(f"<b>Cliente:</b> {h.get('Cliente_exibicao','')}", styles["Normal"]))
-    story.append(Paragraph(f"<b>Razão Social:</b> {h.get('Cliente','')}", styles["Normal"]))
+
+    nome_fantasia = (h.get("Cliente_exibicao") or "").strip()
+    razao_social  = (h.get("Cliente") or "").strip()
+
+    if nome_fantasia:
+    story.append(Paragraph(f"<b>Cliente:</b> {nome_fantasia}", styles["Normal"]))
+    story.append(Spacer(1, 2))
+    
+    if razao_social and razao_social.lower() != nome_fantasia.lower():
+        story.append(Paragraph(f"<b>Razão Social:</b> {razao_social}", styles["Normal"]))
+    else:
+    story.append(Paragraph(f"<b>Cliente:</b> {razao_social}", styles["Normal"]))
+
     story.append(Spacer(1, 6))
-    story.append(Paragraph(f"<b>Inclusão:</b> {h.get('Data_inclusao','')}", styles["Normal"]))
-    story.append(Paragraph(f"<b>Previsão Faturamento:</b> {h.get('Previsao_faturamento','')}", styles["Normal"]))
-    story.append(Spacer(1, 6))
-    obs = h.get("Obs_expedicao") or ""
-    story.append(Paragraph(f"<b>Obs.:</b> {obs}", styles["Normal"]))
-    story.append(Spacer(1, 12))
 
     # -------- TABELA --------
     header = ["Qtd", "Unid", "QTD", "CHECK", "Código", "Descrição"]
