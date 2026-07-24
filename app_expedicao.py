@@ -178,7 +178,11 @@ def extrair_itens(texto: str):
 # --------- pipeline ---------
 
 def ordenar_por_codigo(df: pd.DataFrame) -> pd.DataFrame:
-    """Ordena os itens A-Z pelo Código (case-insensitive)."""
+    """Ordena os itens A-Z pelo Código (case-insensitive) e numera a sequência.
+
+    Após ordenar, adiciona a coluna "Nº" (1..N) como primeira coluna, para
+    contagem/conferência da lista — o último número é o total de produtos.
+    """
     if df.empty or "Codigo" not in df.columns:
         return df
     df = df.sort_values(
@@ -186,6 +190,9 @@ def ordenar_por_codigo(df: pd.DataFrame) -> pd.DataFrame:
         key=lambda col: col.astype(str).str.upper(),
         kind="stable",
     ).reset_index(drop=True)
+
+    # sequência 1..N como primeira coluna
+    df.insert(0, "Nº", range(1, len(df) + 1))
     return df
 
 def calcular_totais(df: pd.DataFrame) -> dict:
@@ -292,30 +299,31 @@ def guia_pdf(df: pd.DataFrame, tamanho_fonte=16, tamanho_desc=10) -> bytes:
         fontName="Helvetica-Bold", fontSize=12, leading=15
     )
     story.append(Paragraph(
-        f"Conferência: {tot['codigos_distintos']} código(s) distinto(s) · "
-        f"{tot['total_itens']} item(ns) · "
+        f"Conferência: {tot['total_itens']} produto(s) · "
+        f"{tot['codigos_distintos']} código(s) distinto(s) · "
         f"Qtd. total: {fmt_qtd_br(tot['quantidade_total'])}",
         resumo_style
     ))
     story.append(Spacer(1, 10))
 
     # -------- TABELA --------
-    header = ["Qtd", "Unid", "QTD", "CHECK", "Código", "Descrição"]
+    header = ["Nº", "Qtd", "Unid", "QTD", "CHECK", "Código", "Descrição"]
     linhas = [header]
 
     for _, r in df.iterrows():
         qtd_br = fmt_qtd_br(r["Quantidade"])
         desc_par = Paragraph(str(r.get("Descricao", "")), desc_style)
         linhas.append([
-            qtd_br,                 # 0 Qtd
-            r.get("Unid", ""),      # 1 Unid
-            "",                     # 2 QTD (vazia p/ escrita manual)
-            "",                     # 3 CHECK (vazia)
-            r.get("Codigo", ""),    # 4 Código
-            desc_par                # 5 Descrição (fonte fixa)
+            str(r.get("Nº", "")),   # 0 Nº (sequência)
+            qtd_br,                 # 1 Qtd
+            r.get("Unid", ""),      # 2 Unid
+            "",                     # 3 QTD (vazia p/ escrita manual)
+            "",                     # 4 CHECK (vazia)
+            r.get("Codigo", ""),    # 5 Código
+            desc_par                # 6 Descrição (fonte fixa)
         ])
 
-    col_widths = [55, 45, 40, 45, 95, 250]
+    col_widths = [30, 55, 45, 40, 45, 95, 230]
     tb = Table(linhas, colWidths=col_widths, repeatRows=1)
 
     tb.setStyle(TableStyle([
@@ -323,17 +331,18 @@ def guia_pdf(df: pd.DataFrame, tamanho_fonte=16, tamanho_desc=10) -> bytes:
         ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
         ("ALIGN", (0, 0), (-1, 0), "CENTER"),
 
-        ("FONT", (0, 1), (1, -1), "Helvetica", tamanho_fonte),
-        ("FONT", (4, 1), (4, -1), "Helvetica", tamanho_fonte),
+        ("FONT", (0, 1), (2, -1), "Helvetica", tamanho_fonte),
+        ("FONT", (5, 1), (5, -1), "Helvetica", tamanho_fonte),
 
         ("GRID", (0, 0), (-1, -1), 0.25, colors.black),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
 
-        ("ALIGN", (0, 1), (0, -1), "RIGHT"),
+        ("ALIGN", (0, 1), (0, -1), "CENTER"),
         ("ALIGN", (1, 1), (1, -1), "RIGHT"),
-        ("ALIGN", (2, 1), (3, -1), "CENTER"),
-        ("ALIGN", (4, 1), (4, -1), "LEFT"),
+        ("ALIGN", (2, 1), (2, -1), "RIGHT"),
+        ("ALIGN", (3, 1), (4, -1), "CENTER"),
         ("ALIGN", (5, 1), (5, -1), "LEFT"),
+        ("ALIGN", (6, 1), (6, -1), "LEFT"),
 
         ("TOPPADDING", (0, 1), (-1, -1), 8),
         ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
@@ -369,13 +378,13 @@ def main():
         st.subheader("Totalizador de produtos")
         tot = calcular_totais(df)
         c1, c2, c3 = st.columns(3)
-        c1.metric("Códigos distintos", tot["codigos_distintos"])
-        c2.metric("Itens (linhas)", tot["total_itens"])
+        c1.metric("Total de produtos", tot["total_itens"])
+        c2.metric("Códigos distintos", tot["codigos_distintos"])
         c3.metric("Quantidade total", fmt_qtd_br(tot["quantidade_total"]))
 
         st.subheader("Pré-visualização")
-        st.caption("Itens ordenados de A-Z pelo Código.")
-        st.dataframe(df, use_container_width=True)
+        st.caption("Itens numerados (Nº) e ordenados de A-Z pelo Código.")
+        st.dataframe(df, use_container_width=True, hide_index=True)
 
         st.download_button("Baixar CSV", df.to_csv(index=False).encode("utf-8-sig"),
                            file_name="expedicao.csv", mime="text/csv")
