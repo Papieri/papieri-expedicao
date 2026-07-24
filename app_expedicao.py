@@ -133,10 +133,29 @@ def extrair_header(texto: str):
     nome_fantasia = obter_nome_fantasia_api_cache(cnpj) if cnpj else ""
     cliente_exibicao = nome_fantasia if nome_fantasia else cliente
 
-    # Cidade/UF
-    ciduf = re.search(r"([A-Za-zÀ-ú\s]+)\s*-\s*([A-Z]{2})\s*-\s*CEP", texto)
-    cidade = ciduf.group(1).strip() if ciduf else ""
-    uf = ciduf.group(2).strip() if ciduf else ""
+    # --- Cidade/UF do CLIENTE ---
+    # O PDF traz dois endereços: o da Papieri (emitente) e o do cliente.
+    # Priorizamos o bloco "Informações do Cliente" e a linha rotulada "Cidade:"
+    # para não pegar a cidade/UF da Papieri por engano.
+    def _cidade_uf(bloco: str):
+        if not bloco:
+            return "", ""
+        # 1) linha rotulada "Cidade: <nome> - UF - CEP" (padrão do cliente)
+        m = re.search(r"Cidade\s*:\s*([^\-\n]+?)\s*-\s*([A-Z]{2})\s*-\s*CEP", bloco, re.I)
+        if not m:
+            # 2) fallback: primeiro "<nome> - UF - CEP" do bloco
+            m = re.search(r"([^\-\n]+?)\s*-\s*([A-Z]{2})\s*-\s*CEP", bloco)
+        if m:
+            return m.group(1).strip(), m.group(2).strip().upper()
+        return "", ""
+
+    cidade, uf = _cidade_uf(bloco_cli if m_cli else "")
+    if not uf:  # fallback global (mantém compatibilidade)
+        cidade, uf = _cidade_uf(texto)
+
+    # --- Vendedor ---
+    mv = re.search(r"Vendedor\s*:\s*(.+)", texto, re.I)
+    vendedor = mv.group(1).strip() if mv else ""
 
     # Datas
     inc = re.search(r"inclu[ií]do em:\s*([0-9/]{10})\s*às\s*([0-9:]{8})", texto, re.I)
@@ -152,6 +171,7 @@ def extrair_header(texto: str):
         CNPJ=cnpj,
         Cidade=cidade,
         UF=uf,
+        Vendedor=vendedor,
         Data_inclusao=data_inclusao,
         Previsao_faturamento=prev_fat,
         Obs_expedicao=extrair_observacoes(texto),
@@ -282,6 +302,19 @@ def guia_pdf(df: pd.DataFrame, tamanho_fonte=16, tamanho_desc=10) -> bytes:
             story.append(Paragraph(f"<b>Razão Social:</b> {razao_social}", styles["Normal"]))
     else:
         story.append(Paragraph(f"<b>Cliente:</b> {razao_social}", styles["Normal"]))
+
+    # Cidade / UF (Estado) do cliente
+    cidade = (h.get("Cidade") or "").strip()
+    uf = (h.get("UF") or "").strip()
+    if cidade and uf:
+        story.append(Paragraph(f"<b>Cidade/UF:</b> {cidade} - {uf}", styles["Normal"]))
+    elif uf:
+        story.append(Paragraph(f"<b>UF:</b> {uf}", styles["Normal"]))
+
+    # Vendedor
+    vendedor = (h.get("Vendedor") or "").strip()
+    if vendedor:
+        story.append(Paragraph(f"<b>Vendedor:</b> {vendedor}", styles["Normal"]))
 
     story.append(Spacer(1, 6))
     story.append(Paragraph(f"<b>Inclusão:</b> {h.get('Data_inclusao','')}", styles["Normal"]))
