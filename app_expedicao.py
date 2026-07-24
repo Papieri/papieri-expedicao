@@ -177,6 +177,31 @@ def extrair_itens(texto: str):
 
 # --------- pipeline ---------
 
+def ordenar_por_codigo(df: pd.DataFrame) -> pd.DataFrame:
+    """Ordena os itens A-Z pelo Código (case-insensitive)."""
+    if df.empty or "Codigo" not in df.columns:
+        return df
+    df = df.sort_values(
+        by="Codigo",
+        key=lambda col: col.astype(str).str.upper(),
+        kind="stable",
+    ).reset_index(drop=True)
+    return df
+
+def calcular_totais(df: pd.DataFrame) -> dict:
+    """Totalizador de produtos para conferência rápida."""
+    if df.empty:
+        return dict(codigos_distintos=0, total_itens=0, quantidade_total=0.0)
+    return dict(
+        codigos_distintos=int(df["Codigo"].nunique()),
+        total_itens=int(len(df)),
+        quantidade_total=float(df["Quantidade"].sum()),
+    )
+
+def fmt_qtd_br(valor: float) -> str:
+    """Formata número no padrão brasileiro (1.234,56)."""
+    return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+
 def extrair_do_pdf(pdf_bytes: bytes) -> pd.DataFrame:
     dados = []
     with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
@@ -202,7 +227,7 @@ def extrair_do_pdf(pdf_bytes: bytes) -> pd.DataFrame:
             for it in extrair_itens(txt):
                 dados.append({**h_full, **it})
 
-    return pd.DataFrame(dados)
+    return ordenar_por_codigo(pd.DataFrame(dados))
 
 # --------- PDF de saída (fonte maior) ---------
 def guia_pdf(df: pd.DataFrame, tamanho_fonte=16, tamanho_desc=10) -> bytes:
@@ -260,12 +285,26 @@ def guia_pdf(df: pd.DataFrame, tamanho_fonte=16, tamanho_desc=10) -> bytes:
     story.append(Paragraph(f"<b>Obs.:</b> {obs}", styles["Normal"]))
     story.append(Spacer(1, 12))
 
+    # -------- TOTALIZADOR (conferência rápida) --------
+    tot = calcular_totais(df)
+    resumo_style = ParagraphStyle(
+        name="Resumo", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=12, leading=15
+    )
+    story.append(Paragraph(
+        f"Conferência: {tot['codigos_distintos']} código(s) distinto(s) · "
+        f"{tot['total_itens']} item(ns) · "
+        f"Qtd. total: {fmt_qtd_br(tot['quantidade_total'])}",
+        resumo_style
+    ))
+    story.append(Spacer(1, 10))
+
     # -------- TABELA --------
     header = ["Qtd", "Unid", "QTD", "CHECK", "Código", "Descrição"]
     linhas = [header]
 
     for _, r in df.iterrows():
-        qtd_br = f"{r['Quantidade']:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        qtd_br = fmt_qtd_br(r["Quantidade"])
         desc_par = Paragraph(str(r.get("Descricao", "")), desc_style)
         linhas.append([
             qtd_br,                 # 0 Qtd
@@ -327,7 +366,15 @@ def main():
             st.error("Não encontrei itens. Se o layout variar, ajuste o regex em extrair_itens().")
             return
 
+        st.subheader("Totalizador de produtos")
+        tot = calcular_totais(df)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Códigos distintos", tot["codigos_distintos"])
+        c2.metric("Itens (linhas)", tot["total_itens"])
+        c3.metric("Quantidade total", fmt_qtd_br(tot["quantidade_total"]))
+
         st.subheader("Pré-visualização")
+        st.caption("Itens ordenados de A-Z pelo Código.")
         st.dataframe(df, use_container_width=True)
 
         st.download_button("Baixar CSV", df.to_csv(index=False).encode("utf-8-sig"),
