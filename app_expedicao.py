@@ -177,7 +177,7 @@ def extrair_header(texto: str):
         Obs_expedicao=extrair_observacoes(texto),
     )
 
-# --------- itens (ajustado ao PDF enviado) ---------
+# --------- itens (suporta 2 layouts de PDF) ---------
 def extrair_itens(texto: str):
     itens = []
     bloc = re.search(r"Itens do Pedido de Venda(.*?)(Outras Informa[cç][oõ]es|$)", texto, re.S | re.I)
@@ -185,14 +185,40 @@ def extrair_itens(texto: str):
     secao = bloc.group(1)
     linhas = [ln.strip() for ln in secao.splitlines() if ln.strip()]
 
-    # Ex.: "200,00 UN CXT007 CAIXA 100 DOCES/SALGADOS ..."
-    rx = re.compile(r"^([\d\.\,]+)\s+([A-Za-z]+)\s+([A-Z0-9\-\/]+)\s+(.+)$")
+    # Layout A (ex.: pedido 1607) -> "Quantidade Código Descrição"
+    #   "10,00 UN CPP007 CAIXA GOURMET ... CPP007"
+    rx_a = re.compile(r"^([\d\.\,]+)\s+([A-Za-z]+)\s+([A-Z0-9\-\/]+)\s+(.+)$")
+    # Layout B (ex.: pedido 1778) -> "Código Descrição Quantidade"
+    #   "CBD105 BASE LAMINADA ... CBD105 100,00 UN"
+    rx_b = re.compile(r"^([A-Z0-9\-\/]+)\s+(.+?)\s+([\d\.\,]+)\s+([A-Za-z]+)$")
+
+    def _num(s: str) -> float:
+        return float(s.replace(".", "").replace(",", "."))
+
+    def _limpa_desc(desc: str, cod: str) -> str:
+        # remove o código repetido no fim da descrição (presente nos dois layouts)
+        toks = desc.split()
+        if toks and toks[-1] == cod:
+            toks = toks[:-1]
+        return " ".join(toks).strip()
+
     for ln in linhas:
-        m = rx.match(ln)
-        if not m: continue
-        qtd_raw, unid, cod, desc = m.groups()
-        qtd = float(qtd_raw.replace(".", "").replace(",", "."))
-        itens.append(dict(Quantidade=qtd, Unid=unid.upper(), Codigo=cod.strip(), Descricao=desc.strip()))
+        m = rx_a.match(ln)
+        if m:
+            qtd_raw, unid, cod, desc = m.groups()
+        else:
+            m = rx_b.match(ln)
+            if not m:
+                continue
+            cod, desc, qtd_raw, unid = m.groups()
+
+        cod = cod.strip()
+        itens.append(dict(
+            Quantidade=_num(qtd_raw),
+            Unid=unid.upper(),
+            Codigo=cod,
+            Descricao=_limpa_desc(desc.strip(), cod),
+        ))
     return itens
 
 # --------- pipeline ---------
