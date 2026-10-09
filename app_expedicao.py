@@ -255,6 +255,25 @@ def fmt_qtd_br(valor: float) -> str:
     """Formata número no padrão brasileiro (1.234,56)."""
     return f"{valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
+def detectar_duplicados(df: pd.DataFrame) -> list:
+    """Retorna os produtos com Código repetido no pedido.
+
+    Lista de dicts: {Codigo, Descricao, ocorrencias, Quantidade_total}.
+    Útil para alertar a expedição sobre possível lançamento em duplicidade.
+    """
+    if df.empty or "Codigo" not in df.columns:
+        return []
+    dups = []
+    for cod, grupo in df.groupby("Codigo", sort=True):
+        if len(grupo) > 1:
+            dups.append(dict(
+                Codigo=cod,
+                Descricao=str(grupo["Descricao"].iloc[0]),
+                ocorrencias=int(len(grupo)),
+                Quantidade_total=float(grupo["Quantidade"].sum()),
+            ))
+    return dups
+
 def extrair_do_pdf(pdf_bytes: bytes) -> pd.DataFrame:
     dados = []
     with pdfplumber.open(BytesIO(pdf_bytes)) as pdf:
@@ -365,13 +384,43 @@ def guia_pdf(df: pd.DataFrame, tamanho_fonte=16, tamanho_desc=10) -> bytes:
     ))
     story.append(Spacer(1, 10))
 
+    # -------- AVISO DE DUPLICIDADE --------
+    dups = detectar_duplicados(df)
+    if dups:
+        alerta_style = ParagraphStyle(
+            name="Alerta", parent=styles["Normal"],
+            fontName="Helvetica-Bold", fontSize=12, leading=15,
+            textColor=colors.red,
+            borderColor=colors.red, borderWidth=1, borderPadding=6,
+            backColor=colors.Color(1, 0.93, 0.93),
+        )
+        itens_txt = "; ".join(
+            f"{d['Codigo']} ({d['ocorrencias']}x) {d['Descricao']}" for d in dups
+        )
+        story.append(Paragraph(
+            f"ATENÇÃO - Código(s) repetido(s) neste pedido: {itens_txt}. "
+            f"Confira se não houve lançamento em duplicidade.",
+            alerta_style
+        ))
+        story.append(Spacer(1, 10))
+
     # -------- TABELA --------
     header = ["Nº", "Qtd", "Unid", "QTD", "CHECK", "Código", "Descrição"]
     linhas = [header]
 
-    for _, r in df.iterrows():
+    # estilo da descrição para linhas com código duplicado (vermelho)
+    desc_style_dup = ParagraphStyle(
+        name="DescDup", parent=desc_style, textColor=colors.red
+    )
+    cods_dup = {d["Codigo"] for d in dups}
+    linhas_dup = []  # índices (na tabela) das linhas duplicadas
+
+    for i, (_, r) in enumerate(df.iterrows(), start=1):
         qtd_br = fmt_qtd_br(r["Quantidade"])
-        desc_par = Paragraph(str(r.get("Descricao", "")), desc_style)
+        eh_dup = r.get("Codigo", "") in cods_dup
+        if eh_dup:
+            linhas_dup.append(i)
+        desc_par = Paragraph(str(r.get("Descricao", "")), desc_style_dup if eh_dup else desc_style)
         linhas.append([
             str(r.get("Nº", "")),   # 0 Nº (sequência)
             qtd_br,                 # 1 Qtd
@@ -385,7 +434,7 @@ def guia_pdf(df: pd.DataFrame, tamanho_fonte=16, tamanho_desc=10) -> bytes:
     col_widths = [30, 55, 45, 40, 45, 95, 230]
     tb = Table(linhas, colWidths=col_widths, repeatRows=1)
 
-    tb.setStyle(TableStyle([
+    estilo = [
         ("FONT", (0, 0), (-1, 0), "Helvetica-Bold", tamanho_fonte),
         ("BACKGROUND", (0, 0), (-1, 0), colors.lightgrey),
         ("ALIGN", (0, 0), (-1, 0), "CENTER"),
@@ -407,7 +456,13 @@ def guia_pdf(df: pd.DataFrame, tamanho_fonte=16, tamanho_desc=10) -> bytes:
         ("BOTTOMPADDING", (0, 1), (-1, -1), 8),
         ("LEFTPADDING", (0, 1), (-1, -1), 6),
         ("RIGHTPADDING", (0, 1), (-1, -1), 6),
-    ]))
+    ]
+    # destaca em vermelho as linhas de código duplicado
+    for i in linhas_dup:
+        estilo.append(("TEXTCOLOR", (0, i), (5, i), colors.red))
+        estilo.append(("BACKGROUND", (0, i), (-1, i), colors.Color(1, 0.93, 0.93)))
+
+    tb.setStyle(TableStyle(estilo))
 
     story.append(tb)
     story.append(Spacer(1, 12))
@@ -440,6 +495,19 @@ def main():
         c1.metric("Total de produtos", tot["total_itens"])
         c2.metric("Códigos distintos", tot["codigos_distintos"])
         c3.metric("Quantidade total", fmt_qtd_br(tot["quantidade_total"]))
+
+        # aviso de produtos duplicados (possível lançamento em duplicidade)
+        dups = detectar_duplicados(df)
+        if dups:
+            linhas_md = "\n".join(
+                f"- **{d['Codigo']}** — {d['Descricao']} "
+                f"(aparece {d['ocorrencias']}x · qtd. total {fmt_qtd_br(d['Quantidade_total'])})"
+                for d in dups
+            )
+            st.warning(
+                "**Atenção: código(s) repetido(s) neste pedido.** "
+                "Confira se não houve lançamento em duplicidade:\n\n" + linhas_md
+            )
 
         st.subheader("Pré-visualização")
         st.caption("Itens numerados (Nº) e ordenados de A-Z pelo Código.")
